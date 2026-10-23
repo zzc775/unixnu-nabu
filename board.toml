@@ -110,8 +110,12 @@ roots = [
   # IOSurfaceFamily; with IOMobileGraphicsFamily already dropped, only IOGPUFamily
   # pulls that dependency, so adding IOSurface back should not reintroduce the
   # duplicate OSMetaClass registration.
-  "com.apple.iokit.IOSurface",
-  "com.apple.iokit.IOGPUFamily",
+  # Experiment: keep the Apple IOSurface kext out of the kernel. The boot console comes
+  # from boot_args.Video (PE_create_console), not from IOKit surfaces, so screen logging
+  # should survive. installMemoryRegions() is what stalls the boot, and it only runs
+  # because this kext is prelinked; IOGPUFamily depends on it, so both go.
+  # "com.apple.iokit.IOSurface",
+  # "com.apple.iokit.IOGPUFamily",
   # Removed com.apple.iokit.IOMobileGraphicsFamily: it and IOGPUFamily both depend on
   # IOSurfaceFamily, and native_prelink.plan() uses a plain list for its work queue,
   # so the shared dependency is packed once per puller and OSMetaClass rejects the
