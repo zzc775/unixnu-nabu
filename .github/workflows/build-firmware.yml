@@ -30,7 +30,7 @@ jobs:
           llvm-objcopy --version | head -1
           python3 -m venv "$HOME/edk2env"
           "$HOME/edk2env/bin/pip" install --upgrade pip
-          "$HOME/edk2env/bin/pip" install coloredlogs edk2-pytool-extensions edk2-pytool-library
+          "$HOME/edk2env/bin/pip" install coloredlogs regex edk2-pytool-extensions edk2-pytool-library
           echo "$HOME/edk2env/bin" >> "$GITHUB_PATH"
 
       - name: Clone Mu-Silicium
