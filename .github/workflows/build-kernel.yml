@@ -69,7 +69,7 @@ jobs:
       - name: Cache IPSW components
         uses: actions/cache@v4
         with:
-          path: UniXNU/out/nabu/ipsw
+          path: UniXNU/out/ipsw
           key: nabu-ipsw-21H461
           fail-on-cache-miss: false
 
@@ -148,19 +148,19 @@ jobs:
       # rebuild into an incremental one, which is the only lever available without a macOS
       # host. A new key per commit always saves a fresh cache; restore-keys falls back to
       # the newest previous one so make only recompiles what changed.
-      - name: Restore kernel object cache
+      # actions/cache abandons the whole save when any listed path is missing, so this
+      # step lists only directories that the build actually creates. The previous version
+      # pointed at out/nabu/tree/.cache/xnu-work/build, which never existed; that single
+      # bad path is why the repository had zero caches.
+      #
+      # The prelink candidate is the one real dependency: archive 9/9 needs
+      # native-owner-*-candidate.macho, which is written after the kernel link in the
+      # same run. A stable key means it is uploaded once and restored afterwards.
+      - name: Restore prelink candidate
         uses: actions/cache@v4
         with:
-          path: |
-            UniXNU/out/nabu/tree/.cache/xnu-work/build
-            # prelink writes native-owner-*-candidate.macho here, and the archive steps
-            # that need one run *before* the kernel link in the same build. Persisting it
-            # is what lets a second run find the candidate the first run produced.
-            UniXNU/out/nabu/tree/build/native-prelink
-          key: xnu-obj-${{ github.sha }}
-          restore-keys: |
-            xnu-obj-
-          # The object tree is large; do not fail the run if the cache is unavailable.
+          path: UniXNU/out/nabu/tree/build/native-prelink
+          key: nabu-prelink-candidate
           fail-on-cache-miss: false
 
       - name: Build kernel
