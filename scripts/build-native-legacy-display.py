@@ -9,6 +9,7 @@ archive digest must match, and so must every source listed there.
 import hashlib
 import json
 from pathlib import Path
+import shutil
 import struct
 import subprocess
 import sys
@@ -147,6 +148,17 @@ require(all(compiled) and vtable + 16 + 358 * 8 not in relocations, 'Exact owned
 # 4. The original kernelcache as the prelink step observed it. Every address below belongs to the
 #    unchanged original code at slide -0x1000000, so it does not move with our kernel.
 candidate = ROOT / 'build/native-prelink/native-owner-mobile-graphics-candidate.macho'
+if not candidate.exists():
+    # Prelink runs after the archives, so a candidate from this build cannot exist yet. The CI
+    # build therefore runs twice: the first pass links without this archive and leaves the
+    # candidate and its plan in out/nabu/kernel. Adopt that pair as the reference -- the original
+    # kexts inside it sit at their original addresses, which is all this script reads.
+    built, plan = ROOT.parent / 'kernel/kernel.macho', ROOT.parent / 'kernel/kernel.json'
+    if built.is_file() and plan.is_file():
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(built, candidate)
+        shutil.copyfile(plan, candidate.with_suffix('.json'))
+        print(f'reference: {built} -> {candidate}')
 if not candidate.exists():          # pruned: any later candidate carries the identical original family
     later = sorted((ROOT / 'build/native-prelink').glob('native-owner-ufs-cpu-desktop-*-candidate.macho'),
                    key=lambda f: f.stat().st_mtime)

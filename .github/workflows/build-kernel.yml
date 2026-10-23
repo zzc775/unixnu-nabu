@@ -144,35 +144,47 @@ jobs:
             echo "$dir HEAD: $(git -C "$dir" rev-parse HEAD)"
           done
 
-      # The kernel build is 8 of the 9 minutes. Reusing the object tree turns a full
-      # rebuild into an incremental one, which is the only lever available without a macOS
-      # host. A new key per commit always saves a fresh cache; restore-keys falls back to
-      # the newest previous one so make only recompiles what changed.
-      # actions/cache abandons the whole save when any listed path is missing, so this
-      # step lists only directories that the build actually creates. The previous version
-      # pointed at out/nabu/tree/.cache/xnu-work/build, which never existed; that single
-      # bad path is why the repository had zero caches.
+      # The display provider is archive 9/9 and it binds addresses that only exist once prelink
+      # has run -- and prelink runs *after* the archives. One build can therefore never satisfy
+      # it, so this job builds twice:
       #
-      # The prelink candidate is the one real dependency: archive 9/9 needs
-      # native-owner-*-candidate.macho, which is written after the kernel link in the
-      # same run. A stable key means it is uploaded once and restored afterwards.
-      - name: Restore prelink candidate
-        uses: actions/cache@v4
-        with:
-          path: UniXNU/out/nabu/tree/build/native-prelink
-          key: nabu-prelink-candidate
-          fail-on-cache-miss: false
-
-      - name: Build kernel
-
+      #   pass 1  links without the provider and leaves out/nabu/kernel/kernel.macho and its
+      #           plan behind: the emit_prelink candidate the provider reads;
+      #   pass 2  restores the provider, which copies that pair into build/native-prelink and
+      #           links the archive in.
+      #
+      # Every address the provider binds belongs to the original kexts at slide -0x1000000, so
+      # pass 1's candidate describes pass 2's kernel as well. Pass 1 is also the known-good
+      # configuration that reached checkpoint 123.
+      - name: "Build kernel (pass 1: without the display provider)"
         run: |
           cd UniXNU
+          # Both halves have to go: the archive entry, and the link gate that would then fail
+          # its `test -f` on the archive. Pass 2 restores both from the commit.
+          sed -i '' -e 's|^  "build-native-legacy-display.py",|  # "build-native-legacy-display.py",|' ../board.toml
+          sed -i '' -e 's|^CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y|# CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y|' ../configs/nabu_defconfig
+          grep -q '^  # "build-native-legacy-display.py",' ../board.toml || { echo 'board.toml: provider entry not disabled'; exit 1; }
+          ./unixnu defconfig nabu_defconfig -D "$GITHUB_WORKSPACE"
           # The tree was already assembled (and patched) by the "Assemble tree" step.
           # Re-running `unixnu tree` here applied the patches a second time, failed on
           # the ones that are not idempotent, and the `|| true` hid it -- leaving make to
           # build a half-patched tree. Build the tree that was actually assembled.
           ./unixnu build kernel
           ls -lh out/nabu/kernel/ || true
+        timeout-minutes: 180
+
+      - name: "Build kernel (pass 2: with the display provider)"
+        run: |
+          cd UniXNU
+          git -C .. checkout -- board.toml configs/nabu_defconfig
+          grep -q '^  "build-native-legacy-display.py",' ../board.toml || { echo 'board.toml: provider entry missing'; exit 1; }
+          grep -q '^CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y' ../configs/nabu_defconfig || { echo 'defconfig: legacy display not enabled'; exit 1; }
+          ./unixnu defconfig nabu_defconfig -D "$GITHUB_WORKSPACE"
+          ./unixnu build kernel
+          ls -lh out/nabu/kernel/ || true
+          echo '--- display provider ---'
+          ls -lh out/nabu/tree/build/native-legacy-display/ || echo '(no archive)'
+          cat out/nabu/tree/build/native-legacy-display/build-report.json 2>/dev/null || true
         timeout-minutes: 180
 
       # The documented pipeline is defconfig -> fetch -> tree -> ipsw fetch ->
