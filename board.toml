@@ -111,6 +111,10 @@ roots = [
   # pulls that dependency, so adding IOSurface back should not reintroduce the
   # duplicate OSMetaClass registration.
   "com.apple.iokit.IOSurface",
+  # Step 1 of the display-provider plan: IOMobileFramebufferLegacy is declared in this
+  # kext (scripts/audit-mobile-graphics-legacy.py reads its text segment), so
+  # NativeLegacyDisplay cannot even inherit without it.
+  "com.apple.iokit.IOMobileGraphicsFamily",
   "com.apple.iokit.IOGPUFamily",
   # Removed com.apple.iokit.IOMobileGraphicsFamily: it and IOGPUFamily both depend on
   # IOSurfaceFamily, and native_prelink.plan() uses a plain list for its work queue,
