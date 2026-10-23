@@ -103,7 +103,15 @@ roots = [
   "com.apple.driver.AppleMobileFileIntegrity",
   "com.apple.driver.ApplePMGR",
   "com.apple.driver.IODARTFamily",
-  "com.apple.filesystems.apfs",
+  # Dropped for the NativeUfs experiment: apfs pulls com.apple.iokit.IOStorageFamily
+  # into the prelink closure, and that kext defines IOBlockStorageDevice. With
+  # NativeUfs enabled the build also links build/storage-abi/IOBlockStorageDevice-reference.o
+  # (see scripts/build-xnu-4k-baseline.sh), so the class exists twice and OSMetaClass
+  # panics at boot with "class IOBlockStorageDevice is a duplicate". sheng never hits
+  # this because its archives list has no audit-storage-interface.py, so the reference
+  # object is absent. Neither APFS nor a root volume is reachable at this stage anyway;
+  # put this line back once the storage ABI question is settled.
+  # "com.apple.filesystems.apfs",
   "com.apple.iokit.IOCryptoAcceleratorFamily",
   # The boot log now reaches "IOsurfaceRoot:installMemoryRegions()" and stops, so
   # IOSurface is needed. It was removed earlier to avoid duplicating
