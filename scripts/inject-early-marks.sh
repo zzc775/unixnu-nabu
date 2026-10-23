@@ -5,8 +5,15 @@ set -e
 X="${1:?xnu source root}"
 
 echo "[1/4] copy marker sources"
-cp "$(dirname "$0")/../kits/nabu/nabu_early_mark.c" "$X/osfmk/arm/nabu_early_mark.c"
-cp "$(dirname "$0")/../kits/nabu/nabu_early_mark.h" "$X/osfmk/arm/nabu_early_mark.h"
+# The board files live in package/ (board.toml kit = "nabu"), which the build
+# tree links at kits/nabu. Inside the tree this script is at tree/scripts, so
+# ../package is the upstream package; in the device repository it is the board
+# package itself. Accept either.
+D="$(dirname "$0")/.."
+SRC="$D/package"
+[ -f "$SRC/nabu_early_mark.c" ] || SRC="$D/kits/nabu"
+cp "$SRC/nabu_early_mark.c" "$X/osfmk/arm/nabu_early_mark.c"
+cp "$SRC/nabu_early_mark.h" "$X/osfmk/arm/nabu_early_mark.h"
 
 echo "[2/4] register in conf/files.arm64"
 python3 - "$X" <<'PY'

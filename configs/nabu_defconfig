@@ -18,3 +18,14 @@ CONFIG_XNU_OWNER_DATA_VOLUME_UUID="BEC2158A-350E-4F2E-B87E-A0E69FB0BDEA"
 # Storage is not needed this early; re-enable it once the kernel reaches userland.
 # CONFIG_XNU_NATIVE_UFS=y
 
+# The board-side display provider. This is what IOSurface needs in order to have a
+# display to attach to; without it the boot stops at
+# IOsurfaceRoot::installMemoryRegions(). The archive comes from
+# package/LegacyDisplayProbe.cpp via scripts/build-native-legacy-display.py, which is
+# listed last in [kernel] archives of board.toml.
+#
+# The driver also gates most of its own work behind boot arguments it reads with
+# PE_parse_boot_argn, so the payload must pass offline-legacy-gop / -register /
+# -validate / -transfer / -retire, otherwise start() fails or backend_guard(84) panics.
+CONFIG_XNU_NATIVE_LEGACY_DISPLAY=y
+

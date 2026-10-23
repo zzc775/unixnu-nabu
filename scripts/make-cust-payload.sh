@@ -63,7 +63,7 @@ initrd = "Payloads/ramdisk.img"
 #
 # boot-progress is deliberately absent: it requires CONFIG_XNU_NATIVE_UFS=1, which
 # collides with the IOBlockStorageDevice that apfs pulls in through IOStorageFamily.
-args = "-v serial=3 debug=0x14e kextlog=0xfff kt_fixed_zones=120 -no_slto_panic amfi_get_out_of_my_way=1 rd=md0"
+args = "-v serial=3 debug=0x14e kextlog=0xfff kt_fixed_zones=120 -no_slto_panic amfi_get_out_of_my_way=1 rd=md0 offline-legacy-gop=1 offline-legacy-register=1 offline-legacy-validate=1 offline-legacy-transfer=1 offline-legacy-retire=1"
 TOML
 
 rm -f "$OUT"
