@@ -49,7 +49,7 @@ archives = [
   # XNU_NATIVE_LEGACY_DISPLAY=1, plus the build-report.json that gate verifies.
   # Last, because it reads the compile records of the pass above and the
   # original-kernelcache candidate an earlier prelink left in build/native-prelink.
-  "build-native-legacy-display.py",
+  # "build-native-legacy-display.py",
 ]
 
 [payload.adt]

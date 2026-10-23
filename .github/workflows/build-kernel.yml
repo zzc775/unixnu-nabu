@@ -142,6 +142,10 @@ jobs:
         with:
           path: |
             UniXNU/out/nabu/tree/.cache/xnu-work/build
+            # prelink writes native-owner-*-candidate.macho here, and the archive steps
+            # that need one run *before* the kernel link in the same build. Persisting it
+            # is what lets a second run find the candidate the first run produced.
+            UniXNU/out/nabu/tree/build/native-prelink
           key: xnu-obj-${{ github.sha }}
           restore-keys: |
             xnu-obj-
