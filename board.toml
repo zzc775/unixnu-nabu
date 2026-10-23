@@ -1,5 +1,6 @@
 # UniXNU device repo for Xiaomi Pad 5 (nabu)
-# Only the kernel build path is configured; userdata geometry needs on-device measurement.
+# Forked values measured on a retail 6 GB + 256 GB unit (serial 9e92bc2d, 2026-10-23).
+# Original: https://github.com/Lux12138/unixnu-nabu  (that unit is 12 GiB + 512 GB)
 
 [board]
 name = "nabu"
@@ -48,24 +49,40 @@ archives = [
 [payload.adt]
 tool = "scripts/make-nabu-adt.py"
 chip_id = "207"
-# Measured 2026-10-20 via TWRP: /proc/meminfo MemTotal = 11766512 kB
-# (12 GiB = 12582912 kB minus ~816 MB reserved for modem/hyp/rmtfs) => physical 12 GiB.
-owned_memory_size = "0x130000000"
-dram_size = "0x300000000"
+# Measured 2026-10-23 via adb on a retail 6 GB unit:
+#   /proc/meminfo MemTotal = 5637452 kB (5.38 GiB)
+#   6 GiB = 6291456 kB, so ~638 MB is reserved for modem/hyp/tz.
+# dram_size is the physical total: 6 GiB.
+dram_size = "0x180000000"
+# DarwinBoot searches for a contiguous physical window starting at 0x80000000 (the
+# reference log shows pa=0x80070000). On 12 GiB the reference used 4.75 GiB; on a 6 GiB
+# unit the top of DRAM carries the reservations, so start conservative with 2 GiB
+# (0x80000000..0x100000000). The window itself only needs 768 MiB.
+# Raise to 0x100000000 (4 GiB) once userspace needs more DRAM.
+owned_memory_size = "0x80000000"
 cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
 packed_data_ramdisk = true
 ipad_identity = true
 unique_chip_id = "required"          # the platform seed is not stored in any repository
 
 [userdata]
-# Measured 2026-10-20 via TWRP sysfs (device has an upgraded/larger UFS):
-#   /sys/block/sda/sda31 (userdata) start = 21234176 sectors of 512 bytes
-#   -> first_lba = 21234176 / 8 = 2654272 = 0x288C40   (UFS LBA is 4096 bytes)
-#   size = 973815256 sectors -> 121726907 LBA = 0x74167BB
-#   -> last_lba = first_lba + 121726907 - 1 = 124381178 = 0x77BF3FA
-# Cross-checked against fastboot partition-size:userdata = 0x74167BB000 bytes (matches).
+# Measured 2026-10-23 on a retail 256 GB unit:
+#   fastboot getvar partition-size:userdata = 0x387B2000000 = 242,782,810,112 B
+#   logical-block-size = 0x1000 (4096), so the partition is exactly 59,273,147 LBA.
+#
+# first_lba carries over from the reference because the layout *before* userdata is
+# fixed by the firmware (super alone is 8.5 GiB) and does not depend on capacity.
+# Cross-check with our numbers on a 256,060,514,304 B disk:
+#   userdata ends at 253.67 GB, leaving 2.39 GB at the tail;
+#   the known tail partitions (cust 1 GiB, rescue, rawdump, minidump, logdump, splash,
+#   metadata, ...) add up to 1.67 GB; and "disk - (userdata + tail)" gives 11.60 GB for
+#   everything before userdata against 11.36 GB actually there. Residual 0.24 GB is GPT
+#   plus per-partition alignment, which is exactly what to expect.
 first_lba = 0x288C40
-last_lba = 0x77BF3FA
+# last_lba = first_lba + 59,273,147 - 1
+# The reference value 0x77BF3FA belongs to a 464 GiB userdata on a 512 GB unit and must
+# not be reused here: it points past the end of this partition.
+last_lba = 0x3B0FBFA
 lba_bytes = 4096
 windows = [
   { name = "OS", component = "OS" },

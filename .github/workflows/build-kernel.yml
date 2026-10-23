@@ -8,10 +8,10 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 350
     env:
-      GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+      GITHUB_TOKEN: ${{ github.token }}
       UNIXNU_DEBUG_LDFILELIST: "1"
       XNU_MAKE_V: "1"
-      GH_TOKEN: ${{ secrets.GH_PAT }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
@@ -103,13 +103,13 @@ jobs:
           SHORT=${TAG#xnu-}
           TSHORT=${TRUST_TAG#xnu-}
           echo "TAG=$TAG TRUST_TAG=$TRUST_TAG"
-          curl -sL --fail -H "Authorization: Bearer ${{ secrets.GH_PAT }}" -H "Accept: application/vnd.github+json" \
+          curl -sL --fail -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/apple-oss-distributions/xnu/contents/iokit/DriverKit?ref=$TAG" \
             -o ".cache/sources/xnu-driverkit-$SHORT.json"
-          curl -sL --fail -H "Authorization: Bearer ${{ secrets.GH_PAT }}" -H "Accept: application/vnd.github+json" \
+          curl -sL --fail -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/apple-oss-distributions/xnu/contents/iokit/DriverKit/crypto?ref=$TAG" \
             -o ".cache/sources/xnu-driverkit-crypto-$SHORT.json"
-          curl -sL --fail -H "Authorization: Bearer ${{ secrets.GH_PAT }}" -H "Accept: application/vnd.github+json" \
+          curl -sL --fail -H "Authorization: Bearer ${{ github.token }}" -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/apple-oss-distributions/xnu/contents/EXTERNAL_HEADERS/TrustCache?ref=$TRUST_TAG" \
             -o ".cache/sources/xnu-trustcache-$TSHORT.json"
           echo "=== cached json ==="
