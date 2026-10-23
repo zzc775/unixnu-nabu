@@ -21,7 +21,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential uuid-dev iasl nasm python3 python3-venv python3-pip git ca-certificates
+            build-essential uuid-dev iasl nasm llvm python3 python3-venv python3-pip git ca-certificates
+          # Ubuntu ships llvm-objcopy only under a versioned name; BootShim's Makefile calls it bare.
+          if ! command -v llvm-objcopy >/dev/null 2>&1; then
+            cand=$(ls /usr/bin/llvm-objcopy-* 2>/dev/null | sort -V | tail -1)
+            if [ -n "$cand" ]; then sudo ln -sf "$cand" /usr/local/bin/llvm-objcopy; fi
+          fi
+          llvm-objcopy --version | head -1
           python3 -m venv "$HOME/edk2env"
           "$HOME/edk2env/bin/pip" install --upgrade pip
           "$HOME/edk2env/bin/pip" install coloredlogs edk2-pytool-extensions edk2-pytool-library
