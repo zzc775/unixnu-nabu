@@ -1,0 +1,65 @@
+name: build-firmware
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: EDK II target
+        type: choice
+        options: [DEBUG, RELEASE]
+        default: DEBUG
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential uuid-dev iasl nasm python3 python3-pip git ca-certificates
+
+      - name: Clone Mu-Silicium
+        run: |
+          git clone --depth 1 --branch master \
+            https://github.com/Project-Silicium/Mu-Silicium.git uefi
+          cd uefi
+          git submodule update --init --depth 1 --recursive
+          du -sh . Binaries Mu_Basecore Silicium-ACPI 2>/dev/null || true
+
+      - name: Show device package
+        run: |
+          ls -la uefi/Platforms/Xiaomi/nabuPkg/ | head -30
+          echo '--- DeviceBuild.py exists? ---'
+          test -f uefi/Platforms/Xiaomi/nabuPkg/DeviceBuild.py && echo yes || echo NO
+
+      - name: Build UEFI
+        run: |
+          cd uefi
+          python3 build_uefi.py -d nabu -r "${{ inputs.build_mode }}" 2>&1 | tail -120
+
+      - name: Collect outputs
+        if: always()
+        run: |
+          echo '=== .fd ==='
+          find uefi -type f -name '*.fd' -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -10
+          echo '=== .img ==='
+          find uefi -type f -name '*.img' -printf '%s\t%p\n' 2>/dev/null | sort -rn | head -10
+          echo '=== Build dirs ==='
+          find uefi/Build -maxdepth 3 -type d 2>/dev/null | head -20
+
+      - name: Upload firmware
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nabu-firmware-${{ inputs.build_mode }}
+          path: |
+            uefi/Build/**/*.fd
+            uefi/Build/**/*.img
+            uefi/out/**/*
+          if-no-files-found: warn
+          retention-days: 14
