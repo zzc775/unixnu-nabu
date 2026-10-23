@@ -25,7 +25,7 @@ jobs:
 
       - name: Clone Mu-Silicium
         run: |
-          git clone --depth 1 --branch master \
+          git clone --depth 1 --branch main \
             https://github.com/Project-Silicium/Mu-Silicium.git uefi
           cd uefi
           git submodule update --init --depth 1 --recursive
