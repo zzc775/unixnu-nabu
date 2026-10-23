@@ -62,6 +62,17 @@ jobs:
         run: cd UniXNU && ./unixnu fetch
         timeout-minutes: 60
 
+      # unixnu ipsw fetch does not download the whole restore image: it reads the members
+      # it needs over HTTP range requests and caches the extracted components under
+      # out/nabu/ipsw/<build>. Without this cache every run re-issues those requests to
+      # Apple's CDN, which measured 10m58s of a 17m51s job.
+      - name: Cache IPSW components
+        uses: actions/cache@v4
+        with:
+          path: UniXNU/out/nabu/ipsw
+          key: nabu-ipsw-21H461
+          fail-on-cache-miss: false
+
       - name: Fetch IPSW
         run: cd UniXNU && ./unixnu ipsw fetch
         timeout-minutes: 60
