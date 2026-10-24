@@ -39,7 +39,25 @@ def sha(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-# 1. The audit resolves the original class against the original kernelcache: its
+# 1. Stage the prelink candidate before anything reads it. The audit below resolves the
+#    original class out of build/native-prelink/native-owner-mobile-graphics-candidate.macho,
+#    and it runs before this script's own candidate handling -- so leaving the copy until
+#    section 4 aborts in the audit with "No reference candidate available" instead.
+#
+#    Prelink runs after the archives, so a candidate from this build cannot exist yet. The CI
+#    job therefore builds twice: pass 1 links without this archive and leaves the candidate and
+#    its plan in out/nabu/kernel. Adopt that pair -- the original kexts inside it sit at their
+#    original addresses, which is all this script and the audit read.
+candidate = ROOT / 'build/native-prelink/native-owner-mobile-graphics-candidate.macho'
+if not candidate.exists():
+    built, built_plan = ROOT.parent / 'kernel/kernel.macho', ROOT.parent / 'kernel/kernel.json'
+    if built.is_file() and built_plan.is_file():
+        candidate.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(built, candidate)
+        shutil.copyfile(built_plan, candidate.with_suffix('.json'))
+        print(f'reference: {built} -> {candidate}')
+
+# 2. The audit resolves the original class against the original kernelcache: its
 #    vtable, its abstract leaves and the address of every slot. The header below
 #    is generated from that, so the owned subclass fills exactly the slots the
 #    original leaves abstract and inherits the rest from the real metadata.
@@ -116,13 +134,13 @@ slots.append('};')
 slots.append('static_assert(sizeof(IOMobileFramebufferLegacy)==0x18a0,"Actual original instance extent");')
 ABI.write_text(header + '\n'.join(slots) + '\n')
 
-# 2. The driver, compiled with the flags of the kernel's own IOPlatformExpert.
+# 3. The driver, compiled with the flags of the kernel's own IOPlatformExpert.
 print(run(['python3', ROOT / 'scripts/build-arm-driver.py', 'NativeLegacyDisplay'], text=True), end='')
 obj = OUT / 'NativeLegacyDisplay.o'
 raw = obj.read_bytes()
 image = macho(raw)
 
-# 3. Read the owned vtable out of the object and resolve every slot through its relocations. A slot
+# 4. Read the owned vtable out of the object and resolve every slot through its relocations. A slot
 #    that resolves to a NativeLegacyDisplay method is ours; one that resolves to an
 #    IOMobileFramebufferLegacy symbol is the original's and must be bound by absolute address;
 #    anything else must be an inherited native entry at the address the audit observed.
@@ -145,20 +163,8 @@ for segment in image['segments']:
 compiled = [relocations.get(vtable + 16 + i * 8) for i in range(358)]
 require(all(compiled) and vtable + 16 + 358 * 8 not in relocations, 'Exact owned 358-entry vtable')
 
-# 4. The original kernelcache as the prelink step observed it. Every address below belongs to the
+# 5. The original kernelcache as the prelink step observed it. Every address below belongs to the
 #    unchanged original code at slide -0x1000000, so it does not move with our kernel.
-candidate = ROOT / 'build/native-prelink/native-owner-mobile-graphics-candidate.macho'
-if not candidate.exists():
-    # Prelink runs after the archives, so a candidate from this build cannot exist yet. The CI
-    # build therefore runs twice: the first pass links without this archive and leaves the
-    # candidate and its plan in out/nabu/kernel. Adopt that pair as the reference -- the original
-    # kexts inside it sit at their original addresses, which is all this script reads.
-    built, plan = ROOT.parent / 'kernel/kernel.macho', ROOT.parent / 'kernel/kernel.json'
-    if built.is_file() and plan.is_file():
-        candidate.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(built, candidate)
-        shutil.copyfile(plan, candidate.with_suffix('.json'))
-        print(f'reference: {built} -> {candidate}')
 if not candidate.exists():          # pruned: any later candidate carries the identical original family
     later = sorted((ROOT / 'build/native-prelink').glob('native-owner-ufs-cpu-desktop-*-candidate.macho'),
                    key=lambda f: f.stat().st_mtime)
@@ -207,7 +213,7 @@ for name, address, field, wide in [
     require(read(address, 8) == struct.pack('<2I', expected, 0xd65f03c0), 'Exact original surface getter ' + name)
     bindings['_native_legacy_surface_' + name] = address
 
-# 5. Absolute definitions for those imports, and the driver object staged so its instructions stay
+# 6. Absolute definitions for those imports, and the driver object staged so its instructions stay
 #    byte-identical: only the initialiser section moves.
 asm = OUT / 'original-bindings.S'
 asm.write_text(''.join('.globl %s\n.set %s, %#x\n' % (name, name, va) for name, va in sorted(bindings.items())))
@@ -227,7 +233,7 @@ def code(data, info):
 require(code(raw, image) == code(late.read_bytes(), macho(late.read_bytes())),
         'Only owned initialiser section registration changes')
 
-# 6. The board file, compiled with the recipe the kernel used for IOPlatformExpert.
+# 7. The board file, compiled with the recipe the kernel used for IOPlatformExpert.
 recipe = json.loads((ROOT / 'build/xnu/ios-obj/DEVELOPMENT_ARM64_BCM2837/iokit/DEVELOPMENT/IOPlatformExpert.cpo.json')
                     .read_text().strip().rstrip(','))
 cmd = []
@@ -245,7 +251,7 @@ cmd += ['-Wall', '-Wextra', '-Werror', '-Wno-unused-parameter',
         '-Wno-deprecated-enum-enum-conversion', '-I', str(ROOT / '.cache/xnu-work/osfmk')]
 run(cmd, cwd=recipe['directory'])
 
-# 7. The archive, then the report the link gate reads.
+# 8. The archive, then the report the link gate reads.
 ARCHIVE.unlink(missing_ok=True)
 run(['xcrun', 'ar', 'rcs', ARCHIVE, late, OUT / 'original-bindings.o', OUT / 'LegacyDisplayProbe.o'])
 sources = [ROOT / 'drivers/NativeMobileDisplay/NativeLegacyDisplay.cpp',
