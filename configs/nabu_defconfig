@@ -1,4 +1,4 @@
-﻿# nabu_defconfig
+# nabu_defconfig
 # Mirrors UniXNU-uke's uke-full_defconfig -- the configuration that mounts a root volume and
 # starts launchd on SM7675. Every switch below is reproducible from the pinned sources alone.
 #
