@@ -100,6 +100,36 @@ jobs:
         run: cd UniXNU && ./unixnu tree
         timeout-minutes: 30
 
+      - name: Drop the patches that only exist to prop up the Linux toolchain
+        run: |
+          # iig-method-forwarders.patch appends two definitions to
+          # iokit/Kernel/IOUserServer.cpp:
+          #   IOService::UserSetProperties(OSContainer * properties)
+          #   IOService::SendIOMessageServicePropertyChange(void)
+          # Its own comment states the reason it exists: "Apple's iig emits the DriverKit-facing
+          # forwarders ... into the generated .iig.cpp, which the kernel build does not compile.
+          # The Linux iig shim generates the declarations but not these definitions."
+          # Reverse the polarity: on macOS the declarations are not in IOService.h either, so
+          # each definition has no declaration to match and the kernel stops at
+          #   IOUserServer.cpp:666:12: error: out-of-line definition of 'UserSetProperties'
+          #       does not match any declaration in 'IOService'
+          #   IOUserServer.cpp:672:12: error: out-of-line definition of
+          #       'SendIOMessageServicePropertyChange' does not match any declaration in 'IOService'
+          # Nothing else in the build references either symbol -- if it did, the same compile
+          # would also carry "no member named ..." errors, and it does not -- so the definitions
+          # are pure surplus here. This is the third patch out of 2c11b09 that is Linux-only;
+          # linux-host-tools is neutralised through HOST_COMPAT_* above, and the remaining three
+          # (linux-link-shims, llvm-clang-arm64-crypto-asm, portable-kalloc-type-builtins) are
+          # harmless on Darwin, the kalloc one being guarded by __has_builtin.
+          # build-xnu-4k-baseline.sh picks patches up with a shell glob over
+          # $ROOT/patches/xnu/*.patch, and $ROOT is the assembled tree, so removing the tree
+          # entry is enough -- the UniXNU checkout keeps its file untouched.
+          TREE=UniXNU/out/nabu/tree/patches/xnu
+          echo "--- before ---"; ls "$TREE" | grep -i iig || echo '(no iig patch)'
+          rm -f "$TREE"/iig-method-forwarders*
+          if ls "$TREE" | grep -qi iig; then echo "still present, failing"; exit 1; fi
+          echo "--- after ---"; ls "$TREE" | grep -ci '\.patch$' | xargs -I{} echo "{} patches remain"
+
       - name: Inject GITHUB_TOKEN into API scripts
         run: |
           cd UniXNU/out/nabu/tree
