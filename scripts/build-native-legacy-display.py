@@ -6,9 +6,12 @@ scripts/build-xnu-4k-baseline.sh force-loads when XNU_NATIVE_LEGACY_DISPLAY=1.
 The link refuses the archive unless build-report.json still describes it: the
 archive digest must match, and so must every source listed there.
 """
+import glob
 import hashlib
 import json
+import os
 from pathlib import Path
+import re
 import shutil
 import struct
 import subprocess
@@ -219,9 +222,51 @@ asm = OUT / 'original-bindings.S'
 asm.write_text(''.join('.globl %s\n.set %s, %#x\n' % (name, name, va) for name, va in sorted(bindings.items())))
 sdk = run(['xcrun', '--sdk', 'iphoneos', '--show-sdk-path'], text=True).strip()
 run(['xcrun', 'clang', '-target', 'arm64-apple-ios17.0', '-isysroot', sdk, '-c', asm, '-o', OUT / 'original-bindings.o'])
-llvm = Path(run(['brew', '--prefix', 'llvm'], text=True).strip()) / 'bin'
+
+# llvm-objcopy is not an Xcode tool, and `brew --prefix llvm` prints a path for a formula that
+# is not installed -- on the macos-26 runner that is /opt/homebrew/opt/llvm, which does not
+# exist (the image ships llvm@20 instead, under a versioned prefix). Probe for the binary
+# rather than trusting the prefix.
+def find_objcopy():
+    # CI resolves it once, up front, so a missing tool fails in seconds rather than after a build.
+    hint = os.environ.get('LLVM_OBJCOPY')
+    if hint and Path(hint).is_file():
+        return Path(hint)
+    found = shutil.which('llvm-objcopy')
+    if found:
+        return Path(found)
+    # Homebrew: the runner image ships llvm@20, not plain `llvm`, so the keg is versioned and
+    # `brew --prefix llvm` (which prints a path even for an absent formula) pointed at nothing.
+    for root in ['/opt/homebrew/opt', '/usr/local/opt']:
+        for prefix in ['llvm@22', 'llvm@21', 'llvm@20', 'llvm']:
+            direct = Path(root) / prefix / 'bin' / 'llvm-objcopy'
+            if direct.is_file():
+                return direct
+        for keg in sorted(glob.glob(root + '/llvm@*/bin/llvm-objcopy'), reverse=True):
+            return Path(keg)
+    # Xcode's own toolchain: some versions do carry llvm-objcopy in usr/bin.
+    probe = '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-objcopy'
+    return Path(probe) if Path(probe).is_file() else None
+
+
+objcopy = find_objcopy()
+require(objcopy is not None,
+        'llvm-objcopy not found: install Homebrew llvm (brew install llvm) or add it to PATH'
+        + ' -- looked on PATH, in /opt/homebrew/opt/llvm{,@N}/bin and /usr/local/opt/llvm{,@N}/bin')
+print('llvm-objcopy: %s' % objcopy)
+# --globalize-symbol only gained Mach-O support in LLVM 20 (LLVM 20.1.0 release notes, "Changes
+# to the LLVM tools"). An older objcopy starts fine and then rejects the flag, which reads like a
+# script bug; fail with the real reason instead. `--version` output varies by distribution
+# ("llvm-objcopy version 20.1.8", a bare "Ubuntu LLVM version ..."), so pull the first semver.
+version_text = run([objcopy, '--version'], text=True)
+match = re.search(r'(\d+)\.\d+\.\d+', version_text)
+require(match is not None, 'llvm-objcopy reported no version: ' + version_text.strip()[:200])
+major = int(match.group(1))
+require(major >= 20,
+        'llvm-objcopy from LLVM 20 or newer is required for --globalize-symbol on Mach-O; found: '
+        + version_text.strip().splitlines()[0])
 late = OUT / 'NativeLegacyDisplay.late.o'
-run([llvm / 'llvm-objcopy', '--remove-section=__DATA,__mod_init_func',
+run([objcopy, '--remove-section=__DATA,__mod_init_func',
      '--globalize-symbol=__GLOBAL__sub_I_NativeLegacyDisplay.cpp', obj, late])
 
 

@@ -45,6 +45,51 @@ jobs:
           uname -m
           df -h /
 
+      # llvm-objcopy is not an Xcode tool, and `brew --prefix llvm` happily prints a prefix for a
+      # formula that is not installed -- /opt/homebrew/opt/llvm -- while the macos-26 image ships
+      # llvm@20 under a versioned prefix. The provider script therefore handed subprocess a path
+      # that had never existed, and only found out after pass 1 had burnt seven minutes of build.
+      # Resolve it here, once, in seconds.
+      #
+      # The version floor is real: --globalize-symbol only learned Mach-O in LLVM 20, and an older
+      # objcopy accepts the invocation and then rejects the flag.
+      - name: Resolve llvm-objcopy
+        run: |
+          set -eu
+          found=$(command -v llvm-objcopy || true)
+          if [ -z "$found" ]; then
+            for c in /opt/homebrew/opt/llvm@*/bin/llvm-objcopy /usr/local/opt/llvm@*/bin/llvm-objcopy \
+                     /opt/homebrew/opt/llvm/bin/llvm-objcopy /usr/local/opt/llvm/bin/llvm-objcopy \
+                     /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-objcopy; do
+              if [ -x "$c" ]; then found=$c; break; fi
+            done
+          fi
+          major_of() { "$1" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 | cut -d. -f1; }
+          if [ -n "$found" ]; then
+            major=$(major_of "$found")
+            if [ -z "$major" ] || [ "$major" -lt 20 ]; then
+              echo "too old or unrecognised: $found ($("$found" --version 2>&1 | head -1))"
+              found=
+            fi
+          fi
+          if [ -z "$found" ]; then
+            echo '--- nothing usable, listing what the image has ---'
+            ls -d /opt/homebrew/opt/llvm* 2>/dev/null || echo 'no llvm keg at all'
+            brew list --formula 2>/dev/null | grep -i llvm || echo 'no llvm formula installed'
+            echo 'installing llvm'
+            brew install llvm
+            for c in "$(brew --prefix llvm 2>/dev/null)/bin/llvm-objcopy" \
+                     /opt/homebrew/opt/llvm/bin/llvm-objcopy /usr/local/opt/llvm/bin/llvm-objcopy; do
+              if [ -x "$c" ]; then found=$c; break; fi
+            done
+          fi
+          [ -n "$found" ] && [ -x "$found" ] || { echo "llvm-objcopy still missing"; exit 1; }
+          major=$(major_of "$found")
+          [ "${major:-0}" -ge 20 ] || { echo "llvm-objcopy is LLVM $major, need >= 20"; exit 1; }
+          echo "llvm-objcopy: $found (LLVM $major)"
+          "$found" --version 2>&1 | head -3
+          echo "LLVM_OBJCOPY=$found" >> "$GITHUB_ENV"
+
       - name: Clone UniXNU
         run: |
           # Upstream UniXNU was tried and rejected: its newer MIG path passes -mach_msg2 to
