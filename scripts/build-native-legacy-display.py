@@ -313,3 +313,31 @@ sources = [ROOT / 'drivers/NativeMobileDisplay/NativeLegacyDisplay.cpp',
     original_instructions_modified=False, driver_initialized=False,
     display_presented=False, desktop=False), indent=2) + '\n')
 print('Built the nabu board backend over the genuine original Legacy inheritance/dispatch')
+
+# 9. The link also force-loads build/legacy-display-probe/libLegacyDisplayProbe.a, an
+#    unconditional stub of scripts/build-xnu-4k-baseline.sh ("implementation lives only in
+#    UniXNU-sheng"). It defines exactly the two entry points this archive now provides for real,
+#    so both force_loads hand ld the same strong symbols and the link dies with
+#
+#      duplicate symbol '_native_legacy_display_probe'
+#      duplicate symbol '_native_legacy_display_late_probe'
+#
+#    The stub is only (re)built when its archive is absent, which is the seam to use: leave an
+#    archive there that carries the one symbol the board still does not define -- the weak UFS
+#    window observer -- and the stub keeps quiet about ours. No upstream file is edited, and a
+#    configuration that does not build this provider still gets the full stub.
+STUB = ROOT / 'build/legacy-display-probe'
+STUB.mkdir(parents=True, exist_ok=True)
+stub_src = STUB / 'NativeLegacyDisplayStub.cpp'
+stub_src.write_text('extern "C" void boot_progress_poll(void) {}\n')
+stub_obj = STUB / 'NativeLegacyDisplayStub.o'
+run(['xcrun', '--sdk', 'iphoneos', 'clang++', '-target', 'arm64-apple-ios17.0', '-mkernel',
+     '-ffreestanding', '-fno-builtin', '-std=gnu++2b', '-O2', '-c', '-o', stub_obj, stub_src])
+stub_archive = STUB / 'libLegacyDisplayProbe.a'
+stub_archive.unlink(missing_ok=True)
+run(['xcrun', 'ar', 'rcs', stub_archive, stub_obj])
+stub_symbols = run(['xcrun', 'nm', '-gU', stub_archive], text=True)
+for ours in ('_native_legacy_display_probe', '_native_legacy_display_late_probe'):
+    require(ours not in stub_symbols, 'The board stub archive still defines ' + ours)
+require('_boot_progress_poll' in stub_symbols, 'The board stub archive lost boot_progress_poll')
+print('stub archive: %s (boot_progress_poll only)' % stub_archive)
