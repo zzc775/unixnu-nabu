@@ -50,7 +50,37 @@ jobs:
           # Upstream UniXNU was tried and rejected: its newer MIG path passes -mach_msg2 to
           # clang, and xnu-10063 needs the oldest iig behaviour or the reply-size metadata is
           # wrong and mig_init() trips. This snapshot is the tree the kernel actually builds on.
-          git clone --recurse-submodules --depth 1 --shallow-submodules https://github.com/Lux12138/UniXNU.git UniXNU
+          #
+          # Pin the commit. `--depth 1` follows upstream HEAD, and upstream is an active
+          # bring-up branch: between the 04a4e84 run (which reached checkpoint 123) and the
+          # 1438805 run, 40+ commits landed. One of them made this job fail in a way that has
+          # nothing to do with this board:
+          #
+          #   patches/xnu/linux-host-tools.patch now appends to makedefs/MakeInc.cmd
+          #     HOST_COMPAT_CFLAGS ?= -include $(HOST_SDKROOT)/usr/include/compat/hostcompat.h
+          #   which is a shim for building on Linux/WSL, where there is no Xcode SDK. On macOS
+          #   HOST_SDKROOT resolves to Xcode's MacOSX26.5.sdk, that file is not in it, and
+          #   installhdrs dies on the first two host tools:
+          #     <built-in>:1:10: fatal error: '.../MacOSX26.5.sdk/usr/include/compat/hostcompat.h'
+          #
+          # ed0fb957f5 is the HEAD the green run used. It already carries everything this
+          # board needs -- XNU_NATIVE_LEGACY_DISPLAY, the force_load of the provider archive,
+          # emit_prelink and the mobile display provider -- so the pin costs nothing.
+          UNIXNU_PIN=ed0fb957f5210ce080503f05af1df14a294b1fce
+          # blob:none keeps the clone small (scripts and trees only) while still exposing every
+          # commit, which `--depth 1` does not: it can only ever hand back the tip.
+          git clone -q --filter=blob:none --no-checkout https://github.com/Lux12138/UniXNU.git UniXNU
+          git -C UniXNU checkout -q "$UNIXNU_PIN"
+          # No --depth: these submodule commits were the tips when the green run cloned
+          # them, but upstream has moved since, and a shallow fetch of an older commit
+          # fails outright. A full submodule clone is small next to the kernel build.
+          git -C UniXNU submodule -q update --init --recursive
+          pinned=$(git -C UniXNU rev-parse HEAD)
+          [ "$pinned" = "$UNIXNU_PIN" ] || { echo "UniXNU: checked out $pinned, wanted $UNIXNU_PIN"; exit 1; }
+          if [ -f UniXNU/patches/xnu/linux-host-tools.patch ]; then
+            echo 'UniXNU: linux-host-tools.patch is present -- the pin predates it, so this is the wrong commit'; exit 1
+          fi
+          echo "UniXNU: $pinned (linux-host-tools.patch absent, as expected)"
 
       - name: Select defconfig
         run: |
