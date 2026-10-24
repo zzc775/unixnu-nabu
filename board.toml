@@ -76,16 +76,23 @@ tool = "scripts/make-nabu-adt.py"
 # --chip-id, and the payload that boots today carries neither, so supplying chip_id alone fails:
 #   error: --unique-chip-id and --chip-id must be supplied together
 # The ADT identifies the platform through arm-io/product, not through a chip id.
-# Measured 2026-10-20 via TWRP: /proc/meminfo MemTotal = 11766512 kB
-# (12 GiB = 12582912 kB minus ~816 MB reserved for modem/hyp/rmtfs) => physical 12 GiB.
+# Measured 2026-10-23 via adb on THIS retail 6 GB unit (serial 9e92bc2d):
+# /proc/meminfo MemTotal = 5637452 kB (5.38 GiB); 6 GiB = 6291456 kB, so ~638 MB is
+# reserved for modem/hyp/tz. The reference board is a 12 GiB expanded unit -- do not copy
+# its dram_size here.
 # darwinboot-memory-size: the contiguous window DarwinBoot asks the firmware for.
-# 0x130000000 (4.75 GiB) is what this machine booted with when the kernel reached
-# execve(launchd). Dropping it to 0x20000000 (512 MiB) -- the value 1PJL uses on a 6 GiB
-# handset -- made the boot stall inside kminit(), at
-# IOsurfaceRoot::installMemoryRegions(), which allocates from this window.
-# make-nabu-adt.py accepts up to 0x200000000 (8 GiB).
-owned_memory_size = "0x130000000"
-dram_size = "0x300000000"
+# This is the one value that must NOT be taken from the reference. 0x130000000 (4.75 GiB)
+# does not exist on a 6 GiB part. The window starts at 0x80000000, so 3 GiB ends at
+# 0x140000000, leaving 1 GiB of headroom below the reserved top of DRAM.
+#
+# Why the size matters at all -- the reference measured it, and it is the direct cause of the
+# symptom this port chased for two days: on a 12 GiB unit, dropping the window to 512 MiB
+# made the boot stall inside kminit() at IOsurfaceRoot::installMemoryRegions(), which
+# allocates from this window. So "stopped at installMemoryRegions" was never a display
+# problem; it was this allocator running out of room. Start at 3 GiB and raise towards
+# 0x100000000 (4 GiB) if the mount path wants more.
+owned_memory_size = "0xC0000000"
+dram_size = "0x180000000"
 cpu_regs = "0,0x100,0x200,0x300,0x400,0x500,0x600,0x700"
 # false selects make-nabu-adt.py's --data-ramdisk, which writes the memory-map node named
 # "RAMDisk". true writes "PackedRAMDisk" instead, and DarwinBoot rejects that pairing with
@@ -104,14 +111,18 @@ ipad_identity = true
 unique_chip_id = false
 
 [userdata]
-# Measured 2026-10-20 via TWRP sysfs (device has an upgraded/larger UFS):
-#   /sys/block/sda/sda31 (userdata) start = 21234176 sectors of 512 bytes
-#   -> first_lba = 21234176 / 8 = 2654272 = 0x288C40   (UFS LBA is 4096 bytes)
-#   size = 973815256 sectors -> 121726907 LBA = 0x74167BB
-#   -> last_lba = first_lba + 121726907 - 1 = 124381178 = 0x77BF3FA
-# Cross-checked against fastboot partition-size:userdata = 0x74167BB000 bytes (matches).
+# Measured on THIS retail 256 GB unit (serial 9e92bc2d, 2026-10-23):
+#   fastboot getvar partition-size:userdata = 0x387B2000000 = 242,782,810,112 B
+#   logical-block-size = 0x1000 (4096), so the partition is 59,273,147 LBA.
+#
+# first_lba carries over from the reference: the layout *before* userdata is fixed by the
+# firmware (super alone is 8.5 GiB) and does not scale with capacity.
 first_lba = 0x288C40
-last_lba = 0x77BF3FA
+# last_lba = first_lba + 59,273,147 - 1
+# The reference value 0x77BF3FA belongs to a 464 GiB userdata on a 512 GB unit and must not be
+# reused here -- it points past the end of this partition, and writing a root image to it
+# would either fail or land in whatever follows.
+last_lba = 0x3B0FBFA
 lba_bytes = 4096
 windows = [
   { name = "OS", component = "OS" },
