@@ -16,6 +16,16 @@ jobs:
       # Build the read-only register probe in its place so the kernel links and reports what the
       # GCC and UFSHCI windows actually read.
       XNU_NABU_UFS_REGISTER_PROBE: "1"
+      # UniXNU 2c11b09 ("adopt the xnu-linux-toolchain portability patches") made every host tool
+      # compile with `-include $(HOST_SDKROOT)/usr/include/compat/hostcompat.h` and link
+      # `-lhostcompat -luuid`. Both shims exist only in the Linux mock sysroot; the macOS SDK has
+      # no compat/ directory, so the very first host tool (SETUP/config/externs.o) dies with
+      #   fatal error: '.../MacOSX26.5.sdk/usr/include/compat/hostcompat.h' file not found
+      # MakeInc.cmd defines both with plain `?=`, so an empty definition in the environment stops
+      # make from ever assigning the Linux values. This is the whole macOS-side fix; the other
+      # four patches in that commit are kernel-source only.
+      HOST_COMPAT_CFLAGS: ""
+      HOST_COMPAT_LIBS: ""
     steps:
       - uses: actions/checkout@v4
 
@@ -50,11 +60,27 @@ jobs:
           df -h /
 
       - name: Clone UniXNU
+        env:
+          # The commit that was HEAD when board 6139dcc was pushed (2026-10-24 06:49Z).
+          # Pinned by sha instead of tracking the branch tip, because HEAD moved twice in the
+          # last day and broke the macOS build both times:
+          #   2c11b09  (10-23 11:25Z) gave every host tool a -include of compat/hostcompat.h,
+          #            which only exists in the Linux mock sysroot (see HOST_COMPAT_* above);
+          #   f6883a7  (10-24 07:25Z) added NativeDwc3 and ff3450d defaulted its gate to on, so
+          #            the link step now demands build/native-dwc3/libNativeDwc3.a, an archive
+          #            this board.toml does not list.
+          # f3f2ec2 is also the probe commit the 6139dcc notes describe, so the board config
+          # and the toolchain come from the same moment. It still has the hostcompat patch,
+          # which is why HOST_COMPAT_CFLAGS must stay empty.
+          UNIXNU_REF: f3f2ec27a725c5d069a66bd135398e77788c7efa
         run: |
-          # Upstream UniXNU was tried and rejected: its newer MIG path passes -mach_msg2 to
-          # clang, and xnu-10063 needs the oldest iig behaviour or the reply-size metadata is
-          # wrong and mig_init() trips. This snapshot is the tree the kernel actually builds on.
-          git clone --recurse-submodules --depth 1 --shallow-submodules https://github.com/Lux12138/UniXNU.git UniXNU
+          git init -q UniXNU
+          cd UniXNU
+          git remote add origin https://github.com/Lux12138/UniXNU.git
+          git fetch -q --depth 1 origin "$UNIXNU_REF"
+          git checkout -q --detach FETCH_HEAD
+          git submodule update -q --init --recursive --depth 1
+          echo "checked out:"; git log --oneline -1
 
       - name: Select defconfig
         run: |
